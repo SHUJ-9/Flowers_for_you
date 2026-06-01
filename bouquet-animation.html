@@ -214,6 +214,22 @@
   #lyric-card.in  { animation: lyricIn  0.75s cubic-bezier(0.22,1,0.36,1) forwards; }
   #lyric-card.out { animation: lyricOut 0.55s cubic-bezier(0.55,0,1,0.45) forwards; }
 
+  /* ── KARAOKE WORD HIGHLIGHTING ── */
+  .kword {
+    display: inline;
+    color: rgba(255,255,255,0.28);
+    transition: color 0.055s linear, text-shadow 0.055s linear;
+  }
+  .kword.lit {
+    color: #fff;
+    text-shadow:
+      0 0 14px rgba(249,168,212,1),
+      0 0 32px rgba(249,168,212,0.5),
+      0 0 60px rgba(196,165,253,0.3);
+  }
+  .lyric-aside .kword     { color: rgba(249,168,212,0.3); }
+  .lyric-aside .kword.lit { color: rgba(249,168,212,1); }
+
   .lyric-img {
     width: 140px;
     height: 140px;
@@ -332,84 +348,235 @@ function beginTransition() {
   }, 950);
 }
 
-// ─── LYRICS SYNC ─────────────────────────────────────────────────
-// Each cue: show/hide in seconds, html = inner markup for the card
-// aside = italic pink chorus line, main = regular white line
-const LYRIC_CUES = [
+// ─── AUDIO-DRIVEN LYRICS ENGINE ──────────────────────────────────
+// words: [text, syllables]  — used for karaoke interpolation
+// prior: rough anchor (seconds) — snapped to nearest waveform onset
+// type: 'main' | 'aside' | 'final'
+// fixedDur: override end time (aside lines have short fixed duration)
+const LYRICS_DATA = [
   {
-    show: 0.2, hide: 3.8,
-    html: `<span class="lyric-main">I knew it from the start</span>`
+    prior: 0.2,
+    type: 'main',
+    words: [['I',1],['knew',1],['it',1],['from',1],['the',1],['start',1]],
   },
   {
-    show: 3.5, hide: 4.7,
-    html: `<span class="lyric-aside">(You are the one)</span>`
+    prior: 3.5,
+    type: 'aside',
+    fixedDur: 1.2,
+    words: [['(You',1],['are',1],['the',1],['one)',1]],
   },
   {
-    show: 6.8, hide: 13.8,
-    html: `<span class="lyric-main">You are the one that I've been</span>
-           <span class="lyric-main">searching for my whole life through</span>`
+    prior: 6.8,
+    type: 'main',
+    words: [['You',1],['are',1],['the',1],['one',1],['that',1],["I've",1],['been',1],['searching',2],['for',1],['my',1],['whole',1],['life',1],['through',1]],
   },
   {
-    show: 13.4, hide: 14.6,
-    html: `<span class="lyric-aside">(You are the one)</span>`
+    prior: 13.4,
+    type: 'aside',
+    fixedDur: 1.2,
+    words: [['(You',1],['are',1],['the',1],['one)',1]],
   },
   {
-    show: 16.4, hide: 24.5,
-    html: `<span class="lyric-main">You are the one that I've been</span>
-           <span class="lyric-main">looking for and now that I have found you</span>`
+    prior: 16.4,
+    type: 'main',
+    words: [['You',1],['are',1],['the',1],['one',1],['that',1],["I've",1],['been',1],['looking',2],['for',1],['and',1],['now',1],['that',1],['I',1],['have',1],['found',1],['you',1]],
   },
   {
-    show: 24.1, hide: 30.5,
-    html: `<span class="lyric-main">I'll never let you go,</span>
-           <span class="lyric-main">I'll hold you in my arms</span>`
+    prior: 24.1,
+    type: 'main',
+    words: [["I'll",1],['never',2],['let',1],['you',1],['go,',1],["I'll",1],['hold',1],['you',1],['in',1],['my',1],['arms',1]],
   },
   {
-    show: 30.1, hide: 37.5,
-    html: `<img src="yesyouare.jpg" class="lyric-img" alt="">
-           <span class="lyric-aside">'Cause</span>
-           <span class="lyric-main" style="font-size:21px;letter-spacing:0.08em">you are the one</span>`
+    prior: 30.1,
+    type: 'final',
+    fixedDur: 7.0,
+    image: 'yesyouare.jpg',
+    words: [["'Cause",1],['you',1],['are',1],['the',1],['one',1]],
   },
 ];
 
+// ── Waveform onset detection using Web Audio API ──────────────────
+async function detectOnsets(src) {
+  try {
+    const res  = await fetch(src);
+    const buf  = await res.arrayBuffer();
+    const actx = new (window.AudioContext || window.webkitAudioContext)();
+    const decoded = await actx.decodeAudioData(buf);
+    actx.close();
+
+    // Mix to mono
+    const len  = decoded.length;
+    const sr   = decoded.sampleRate;
+    const mono = new Float32Array(len);
+    for (let c = 0; c < decoded.numberOfChannels; c++) {
+      const ch = decoded.getChannelData(c);
+      for (let i = 0; i < len; i++) mono[i] += ch[i] / decoded.numberOfChannels;
+    }
+
+    // Short-time energy — 20ms frames, 5ms hop
+    const fSz = Math.round(sr * 0.020);
+    const hSz = Math.round(sr * 0.005);
+    const rms  = [];
+    for (let i = 0; i + fSz < len; i += hSz) {
+      let e = 0;
+      for (let j = 0; j < fSz; j++) e += mono[i + j] ** 2;
+      rms.push({ t: (i + fSz / 2) / sr, v: Math.sqrt(e / fSz) });
+    }
+
+    // Spectral flux (half-wave rectified first difference of energy)
+    const flux = rms.map((f, i) => ({
+      t: f.t,
+      v: i > 0 ? Math.max(0, f.v - rms[i - 1].v) : 0,
+    }));
+
+    // Peak-picking with adaptive local-mean threshold
+    const W = 30; // ±150ms window
+    const MULT = 1.25;
+    const onsets = [];
+    for (let i = W; i < flux.length - W; i++) {
+      // local mean
+      let sum = 0;
+      for (let k = i - W; k <= i + W; k++) sum += flux[k].v;
+      const localMean = sum / (2 * W + 1);
+
+      if (flux[i].v < localMean * MULT) continue;
+
+      // local maximum in ±3 frames
+      let isMax = true;
+      for (let k = i - 3; k <= i + 3; k++) {
+        if (k !== i && flux[k].v >= flux[i].v) { isMax = false; break; }
+      }
+      if (isMax) onsets.push(flux[i].t);
+    }
+
+    return { onsets, duration: decoded.duration };
+  } catch (err) {
+    console.warn('[lyrics] onset detection failed, using priors:', err);
+    return { onsets: [], duration: 0 };
+  }
+}
+
+// Snap prior to nearest onset within ±2s window, apply -35ms early display
+const EARLY_MS = 0.035;
+function snapToOnset(prior, onsets) {
+  let best = null, bestDist = Infinity;
+  for (const o of onsets) {
+    const d = Math.abs(o - prior);
+    if (d < bestDist && d < 2.0) { best = o; bestDist = d; }
+  }
+  return (best !== null ? best : prior) - EARLY_MS;
+}
+
+// Build karaoke HTML: each word is a <span class="kword"> with data-s/data-e
+function buildKaraokeSpans(words, lineStart, lineEnd) {
+  const totalSyl = words.reduce((s, [, n]) => s + n, 0);
+  const dur = lineEnd - lineStart;
+  let html = '', elapsed = 0;
+  words.forEach(([word, syl], i) => {
+    const wDur  = (syl / totalSyl) * dur;
+    const wStart = lineStart + elapsed;
+    elapsed += wDur;
+    const wEnd  = lineStart + elapsed;
+    html += `<span class="kword" data-s="${wStart.toFixed(3)}" data-e="${wEnd.toFixed(3)}">${word}</span>`;
+    if (i < words.length - 1) html += ' ';
+  });
+  return html;
+}
+
+// Render one cue's full HTML (with karaoke spans)
+function renderCueHTML(lyric, start, end) {
+  let html = '';
+  if (lyric.image) html += `<img src="${lyric.image}" class="lyric-img" alt="">`;
+
+  if (lyric.type === 'aside') {
+    html += `<span class="lyric-aside">${buildKaraokeSpans(lyric.words, start, end)}</span>`;
+    return html;
+  }
+
+  // Split long lines into two display rows at natural midpoint
+  const words = lyric.words;
+  if (words.length > 6) {
+    const half   = Math.ceil(words.length / 2);
+    const w1     = words.slice(0, half);
+    const w2     = words.slice(half);
+    const syl1   = w1.reduce((s, [, n]) => s + n, 0);
+    const sylAll = words.reduce((s, [, n]) => s + n, 0);
+    const mid    = start + (syl1 / sylAll) * (end - start);
+
+    const sizeStyle = lyric.type === 'final' ? ' style="font-size:20px;letter-spacing:0.08em"' : '';
+    html += `<span class="lyric-main"${sizeStyle}>${buildKaraokeSpans(w1, start, mid)}</span>`;
+    html += `<span class="lyric-main"${sizeStyle}>${buildKaraokeSpans(w2, mid,   end)}</span>`;
+  } else {
+    const sizeStyle = lyric.type === 'final' ? ' style="font-size:20px;letter-spacing:0.08em"' : '';
+    html += `<span class="lyric-main"${sizeStyle}>${buildKaraokeSpans(words, start, end)}</span>`;
+  }
+  return html;
+}
+
+// ── Main sync controller ──────────────────────────────────────────
 function startLyricsSync(bgm) {
   const card = document.getElementById('lyric-card');
+  let cues      = [];
   let activeCue = -1;
 
+  // Kick off waveform analysis immediately
+  detectOnsets('download (2).mp4').then(({ onsets, duration }) => {
+    console.log(`[lyrics] ${onsets.length} onsets detected, audio: ${duration.toFixed(2)}s`);
+
+    // Build snapped cues
+    const snapped = LYRICS_DATA.map(l => snapToOnset(l.prior, onsets));
+    cues = LYRICS_DATA.map((l, i) => {
+      const start = snapped[i];
+      const end   = l.fixedDur
+        ? start + l.fixedDur
+        : (i + 1 < snapped.length ? snapped[i + 1] - 0.05 : start + 6.5);
+      return { lyric: l, start, end };
+    });
+
+    console.log('[lyrics] snapped cues:', cues.map(c => `${c.start.toFixed(3)}–${c.end.toFixed(3)}`));
+  });
+
+  // Card swap with animate-in / animate-out
   function showCue(idx) {
-    if (activeCue === idx) return;
+    if (activeCue === idx || !cues.length) return;
     const prev = activeCue;
-    activeCue = idx;
+    activeCue  = idx;
+
+    const swap = () => {
+      card.innerHTML = idx >= 0 ? renderCueHTML(cues[idx].lyric, cues[idx].start, cues[idx].end) : '';
+      card.classList.remove('out');
+      if (idx >= 0) { void card.offsetWidth; card.classList.add('in'); }
+    };
 
     if (prev !== -1) {
-      // animate out, then swap content
       card.classList.remove('in');
       card.classList.add('out');
-      setTimeout(() => {
-        card.innerHTML = idx >= 0 ? LYRIC_CUES[idx].html : '';
-        card.classList.remove('out');
-        if (idx >= 0) {
-          void card.offsetWidth; // reflow
-          card.classList.add('in');
-        }
-      }, 520);
+      setTimeout(swap, 500);
     } else {
-      card.innerHTML = idx >= 0 ? LYRIC_CUES[idx].html : '';
-      card.classList.remove('out');
-      if (idx >= 0) {
-        void card.offsetWidth;
-        card.classList.add('in');
-      }
+      swap();
     }
   }
 
+  // timeupdate → cue selection
   bgm.addEventListener('timeupdate', () => {
+    if (!cues.length) return;
     const t = bgm.currentTime;
     let found = -1;
-    for (let i = 0; i < LYRIC_CUES.length; i++) {
-      if (t >= LYRIC_CUES[i].show && t < LYRIC_CUES[i].hide) { found = i; break; }
+    for (let i = 0; i < cues.length; i++) {
+      if (t >= cues[i].start && t < cues[i].end) { found = i; break; }
     }
     showCue(found);
   });
+
+  // Karaoke word highlighter — RAF loop, 60fps
+  ;(function karaokeLoop() {
+    requestAnimationFrame(karaokeLoop);
+    if (bgm.paused) return;
+    const t = bgm.currentTime;
+    card.querySelectorAll('.kword').forEach(w => {
+      w.classList.toggle('lit', t >= parseFloat(w.dataset.s));
+    });
+  })();
 
   bgm.addEventListener('seeking', () => {
     activeCue = -1;
