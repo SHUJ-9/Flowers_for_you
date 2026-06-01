@@ -144,6 +144,59 @@
     50%       { opacity: 1;   transform: scale(1.06); }
   }
 
+  /* ── LYRICS ── */
+  #lyrics-box {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 42%;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    padding-bottom: 28px;
+    pointer-events: none;
+    gap: 2px;
+  }
+
+  .lyric-line {
+    font-family: 'Georgia', serif;
+    font-size: 15px;
+    font-weight: 400;
+    color: #fff;
+    text-align: center;
+    letter-spacing: 0.04em;
+    line-height: 1.65;
+    padding: 0 28px;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+    text-shadow:
+      0 0 18px rgba(249,168,212,0.55),
+      0 0 40px rgba(196,165,253,0.25),
+      0 1px 3px rgba(0,0,0,0.8);
+  }
+
+  .lyric-line.aside {
+    font-style: italic;
+    font-size: 12.5px;
+    color: rgba(249,168,212,0.75);
+    letter-spacing: 0.06em;
+  }
+
+  .lyric-line.active {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .lyric-line.fade-out {
+    opacity: 0;
+    transform: translateY(-8px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+
   /* ── AMBIENT NOISE ── */
   .noise {
     position: absolute;
@@ -191,6 +244,20 @@
   <!-- Canvas -->
   <div id="bouquet-screen">
     <canvas id="c"></canvas>
+    <!-- Lyrics overlay -->
+    <div id="lyrics-box">
+      <div class="lyric-line aside"    id="l0">(You are the one)</div>
+      <div class="lyric-line"          id="l1">I knew it from the start</div>
+      <div class="lyric-line aside"    id="l2">(You are the one)</div>
+      <div class="lyric-line"          id="l3">You are the one that I've been</div>
+      <div class="lyric-line"          id="l4">searching for my whole life through</div>
+      <div class="lyric-line aside"    id="l5">(You are the one)</div>
+      <div class="lyric-line"          id="l6">You are the one that I've been</div>
+      <div class="lyric-line"          id="l7">looking for and now that I have found you</div>
+      <div class="lyric-line"          id="l8">I'll never let you go,</div>
+      <div class="lyric-line"          id="l9">I'll hold you in my arms</div>
+      <div class="lyric-line"          id="l10">'Cause you are the one</div>
+    </div>
   </div>
 
   <!-- Music — plays when flowers bloom -->
@@ -242,6 +309,49 @@ function beginTransition() {
       veil.style.opacity = '0';
     }, 60);
   }, 950);
+}
+
+// ─── LYRICS SYNC ─────────────────────────────────────────────────
+// timestamps (seconds) — adjust if the song timing differs
+const LYRIC_CUES = [
+  { id: 'l1',  show: 0.5,  hide: 4.5  },   // I knew it from the start
+  { id: 'l0',  show: 4.0,  hide: 7.5  },   // (You are the one)
+  { id: 'l3',  show: 7.0,  hide: 12.0 },   // You are the one that I've been
+  { id: 'l4',  show: 8.5,  hide: 13.0 },   // searching for...
+  { id: 'l2',  show: 12.5, hide: 16.0 },   // (You are the one)
+  { id: 'l6',  show: 15.5, hide: 21.0 },   // You are the one that I've been
+  { id: 'l7',  show: 17.0, hide: 22.0 },   // looking for and now...
+  { id: 'l8',  show: 21.5, hide: 27.0 },   // I'll never let you go
+  { id: 'l9',  show: 23.5, hide: 28.0 },   // I'll hold you in my arms
+  { id: 'l10', show: 27.0, hide: 33.0 },   // 'Cause you are the one
+];
+
+function startLyricsSync(bgm) {
+  const els = {};
+  LYRIC_CUES.forEach(c => els[c.id] = document.getElementById(c.id));
+
+  bgm.addEventListener('timeupdate', () => {
+    const t = bgm.currentTime;
+    LYRIC_CUES.forEach(c => {
+      const el = els[c.id];
+      if (!el) return;
+      if (t >= c.show && t < c.hide) {
+        el.classList.remove('fade-out');
+        el.classList.add('active');
+      } else if (el.classList.contains('active')) {
+        el.classList.add('fade-out');
+        el.classList.remove('active');
+      }
+    });
+  });
+
+  // reset on loop
+  bgm.addEventListener('seeking', () => {
+    LYRIC_CUES.forEach(c => {
+      const el = els[c.id];
+      if (el) { el.classList.remove('active', 'fade-out'); }
+    });
+  });
 }
 
 // ─── BOUQUET CANVAS ───────────────────────────────────────────────
@@ -576,6 +686,7 @@ function startBouquet() {
       bgm.currentTime = 0;
       bgm.volume = 0;
       bgm.play().catch(() => {});
+      startLyricsSync(bgm);
       // fade in volume smoothly over 1.5s
       let vol = 0;
       const fadeIn = setInterval(() => {
