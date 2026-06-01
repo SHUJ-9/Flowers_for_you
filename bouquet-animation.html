@@ -214,6 +214,20 @@
   #lyric-card.in  { animation: lyricIn  0.75s cubic-bezier(0.22,1,0.36,1) forwards; }
   #lyric-card.out { animation: lyricOut 0.55s cubic-bezier(0.55,0,1,0.45) forwards; }
 
+  .lyric-img {
+    width: 140px;
+    height: 140px;
+    object-fit: cover;
+    object-position: top center;
+    border-radius: 50%;
+    border: 1.5px solid rgba(249,168,212,0.4);
+    box-shadow:
+      0 0 24px rgba(249,168,212,0.35),
+      0 0 60px rgba(196,165,253,0.15);
+    margin-bottom: 10px;
+    display: block;
+  }
+
   /* ── AMBIENT NOISE ── */
   .noise {
     position: absolute;
@@ -351,7 +365,8 @@ const LYRIC_CUES = [
   },
   {
     show: 28.5, hide: 35.0,
-    html: `<span class="lyric-aside">'Cause</span>
+    html: `<img src="yesyouare.jpg" class="lyric-img" alt="">
+           <span class="lyric-aside">'Cause</span>
            <span class="lyric-main" style="font-size:21px;letter-spacing:0.08em">you are the one</span>`
   },
 ];
