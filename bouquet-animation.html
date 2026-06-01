@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bouquet</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: 'Georgia', serif;
+  }
+
+  #app {
+    width: 390px;
+    height: 844px;
+    position: relative;
+    overflow: hidden;
+    background: #06080f;
+  }
+
+  /* ── INTRO SCREEN ── */
+  #intro {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    background: #06080f;
+  }
+
+  .intro-line {
+    overflow: hidden;
+    line-height: 1;
+  }
+
+  .intro-text {
+    display: block;
+    color: #f9a8d4;
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0.38em;
+    text-transform: uppercase;
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity 1s ease, transform 1s ease;
+    font-family: 'Georgia', serif;
+  }
+
+  .intro-text.small {
+    color: #6366f1;
+    font-size: 10px;
+    letter-spacing: 0.5em;
+    margin-top: 18px;
+  }
+
+  .intro-divider {
+    width: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #f9a8d4 50%, transparent);
+    margin: 20px 0;
+    transition: width 1.2s ease;
+    opacity: 0.5;
+  }
+
+  .intro-text.show { opacity: 1; transform: translateY(0); }
+  .intro-divider.show { width: 80px; }
+
+  /* ── FADE VEIL ── */
+  #veil {
+    position: absolute;
+    inset: 0;
+    background: #06080f;
+    z-index: 15;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0s;
+  }
+
+  /* ── CANVAS ── */
+  #bouquet-screen {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    z-index: 5;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* ── TAP TO START ── */
+  #tap-screen {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    background: #06080f;
+    cursor: pointer;
+  }
+
+  .tap-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 1px solid rgba(249,168,212,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: tapPulse 2s ease-in-out infinite;
+  }
+
+  .tap-icon svg {
+    width: 20px;
+    height: 20px;
+    opacity: 0.7;
+  }
+
+  .tap-label {
+    color: rgba(249,168,212,0.5);
+    font-size: 10px;
+    letter-spacing: 0.45em;
+    text-transform: uppercase;
+    font-family: 'Georgia', serif;
+    animation: tapPulse 2s ease-in-out infinite;
+  }
+
+  @keyframes tapPulse {
+    0%, 100% { opacity: 0.5; transform: scale(1); }
+    50%       { opacity: 1;   transform: scale(1.06); }
+  }
+
+  /* ── AMBIENT NOISE ── */
+  .noise {
+    position: absolute;
+    inset: 0;
+    z-index: 25;
+    opacity: 0.025;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 200px 200px;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="noise"></div>
+
+  <!-- Tap to start -->
+  <div id="tap-screen">
+    <div class="tap-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#f9a8d4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 18.5c0 1.1.9 2 2 2h2a2 2 0 0 0 2-2v-1H9v1z"/>
+        <path d="M12 2a7 7 0 0 1 7 7c0 2.6-1.4 4.9-3.5 6.2L15 17H9l-.5-1.8A7 7 0 0 1 12 2z"/>
+      </svg>
+    </div>
+    <span class="tap-label">tap to begin</span>
+  </div>
+
+  <!-- Intro -->
+  <div id="intro">
+    <div class="intro-line">
+      <span class="intro-text" id="t1">with love</span>
+    </div>
+    <div class="intro-divider" id="div1"></div>
+    <div class="intro-line">
+      <span class="intro-text" id="t2">for you</span>
+    </div>
+    <div class="intro-line">
+      <span class="intro-text small" id="t3">a little something</span>
+    </div>
+  </div>
+
+  <!-- Fade veil -->
+  <div id="veil"></div>
+
+  <!-- Canvas -->
+  <div id="bouquet-screen">
+    <canvas id="c"></canvas>
+  </div>
+
+  <!-- Music — plays when flowers bloom -->
+  <audio id="bgm" src="download (2).mp4" preload="auto" loop></audio>
+</div>
+
+<script>
+// ─── TAP TO START — unlocks audio AND begins the whole sequence ───
+document.getElementById('tap-screen').addEventListener('click', function startAll() {
+  this.removeEventListener('click', startAll);
+
+  // unlock audio engine immediately on this user gesture
+  const bgm = document.getElementById('bgm');
+  bgm.volume = 0;
+  bgm.play().then(() => bgm.pause()).catch(() => {});
+
+  // fade out tap screen
+  this.style.transition = 'opacity 0.6s ease';
+  this.style.opacity = '0';
+  setTimeout(() => this.style.display = 'none', 650);
+
+  // ─── INTRO SEQUENCE ─────────────────────────────────────────────
+  setTimeout(() => t1.classList.add('show'), 500);
+  setTimeout(() => div1.classList.add('show'), 1100);
+  setTimeout(() => t2.classList.add('show'), 1400);
+  setTimeout(() => t3.classList.add('show'), 2200);
+  setTimeout(() => beginTransition(), 3800);
+});
+
+const t1   = document.getElementById('t1');
+const t2   = document.getElementById('t2');
+const t3   = document.getElementById('t3');
+const div1 = document.getElementById('div1');
+
+function beginTransition() {
+  const veil  = document.getElementById('veil');
+  const intro = document.getElementById('intro');
+  const bs    = document.getElementById('bouquet-screen');
+
+  veil.style.transition = 'opacity 0.9s ease';
+  veil.style.opacity = '1';
+
+  setTimeout(() => {
+    intro.style.display = 'none';
+    bs.style.opacity = '1';
+    startBouquet();
+    setTimeout(() => {
+      veil.style.transition = 'opacity 1.1s ease';
+      veil.style.opacity = '0';
+    }, 60);
+  }, 950);
+}
+
+// ─── BOUQUET CANVAS ───────────────────────────────────────────────
+function startBouquet() {
+  const canvas = document.getElementById('c');
+  const app    = document.getElementById('app');
+  canvas.width  = app.offsetWidth  * devicePixelRatio;
+  canvas.height = app.offsetHeight * devicePixelRatio;
+  canvas.style.width  = app.offsetWidth  + 'px';
+  canvas.style.height = app.offsetHeight + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+
+  const W = app.offsetWidth;
+  const H = app.offsetHeight;
+  const BX = W / 2;
+  const BY = H * 0.77;
+
+  // Seven stems — center then paired outward
+  const stems = [
+    { a:  0.00, len: 230 },
+    { a: -0.20, len: 212 },
+    { a:  0.20, len: 212 },
+    { a: -0.40, len: 188 },
+    { a:  0.40, len: 188 },
+    { a: -0.62, len: 160 },
+    { a:  0.62, len: 160 },
+  ];
+
+  const PETAL_COLORS = [
+    '#fda4af', // rose
+    '#c4b5fd', // violet
+    '#f0abfc', // fuchsia
+    '#fbcfe8', // blush
+    '#a5b4fc', // indigo-light
+    '#f9a8d4', // pink
+    '#ddd6fe', // lavender
+  ];
+
+  // timing (ms from canvas start)
+  const S_START   = 200;
+  const S_LAG     = 280;
+  const S_DUR     = 750;
+  const L_START   = S_START + stems.length * S_LAG + 100;
+  const L_LAG     = 200;
+  const L_DUR     = 520;
+  const R_START   = L_START + stems.length * L_LAG + 200;
+  const R_DUR     = 800;
+  const F_START   = R_START + R_DUR + 100;
+  const F_LAG     = 240;
+  const F_DUR     = 900;
+  const P_START   = F_START + stems.length * F_LAG + 700;
+
+  let t0 = null;
+  let particles = [];
+  let pSpawned   = false;
+  let musicPlayed = false;
+  const bgm = document.getElementById('bgm');
+
+  // ── easing ──
+  const easeOut3 = t => 1 - Math.pow(1 - t, 3);
+  const easeOut5 = t => 1 - Math.pow(1 - t, 5);
+  const clamp01  = t => Math.max(0, Math.min(1, t));
+
+  // ── tip position ──
+  function tip(i, t = 1) {
+    const s = stems[i];
+    return {
+      x: BX + Math.sin(s.a) * s.len * t,
+      y: BY - Math.cos(s.a) * s.len * t,
+    };
+  }
+
+  // ── STEM ──
+  function drawStem(i, prog) {
+    if (prog <= 0) return;
+    const s  = stems[i];
+    const p  = easeOut3(prog);
+    const ex = BX + Math.sin(s.a) * s.len * p;
+    const ey = BY - Math.cos(s.a) * s.len * p;
+
+    // subtle natural curve control point
+    const cx = BX + Math.sin(s.a) * s.len * p * 0.48 + Math.cos(s.a) * 14;
+    const cy = BY - Math.cos(s.a) * s.len * p * 0.48 - Math.sin(s.a) * 8;
+
+    ctx.save();
+    ctx.shadowBlur  = 10;
+    ctx.shadowColor = 'rgba(74,222,128,0.45)';
+    ctx.strokeStyle = '#4ade80';
+    ctx.lineWidth   = 1.6;
+    ctx.lineCap     = 'round';
+    ctx.beginPath();
+    ctx.moveTo(BX, BY);
+    ctx.quadraticCurveTo(cx, cy, ex, ey);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── LEAF ──
+  function drawLeaf(i, prog) {
+    if (prog <= 0) return;
+    const p  = easeOut5(prog);
+    const s  = stems[i];
+    const pt = 0.52;
+    const lx = BX + Math.sin(s.a) * s.len * pt;
+    const ly = BY - Math.cos(s.a) * s.len * pt;
+    const side = (i % 2 === 0) ? 1 : -1;
+    const la   = s.a + side * 1.05;
+    const ll   = 30 * p;
+
+    ctx.save();
+    ctx.translate(lx, ly);
+    ctx.shadowBlur  = 8;
+    ctx.shadowColor = 'rgba(34,197,94,0.35)';
+    ctx.fillStyle   = 'rgba(34,197,94,0.65)';
+    ctx.strokeStyle = '#16a34a';
+    ctx.lineWidth   = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(
+      Math.sin(la) * ll * 0.55 + Math.cos(la) * 9 * p,
+      -Math.cos(la) * ll * 0.55 + Math.sin(la) * 9 * p,
+      Math.sin(la) * ll,
+      -Math.cos(la) * ll
+    );
+    ctx.quadraticCurveTo(
+      Math.sin(la) * ll * 0.55 - Math.cos(la) * 9 * p,
+      -Math.cos(la) * ll * 0.55 - Math.sin(la) * 9 * p,
+      0, 0
+    );
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── RIBBON ──
+  function drawRibbon(prog) {
+    if (prog <= 0) return;
+    const p = easeOut3(prog);
+    ctx.save();
+    ctx.translate(BX, BY + 8);
+    ctx.shadowBlur  = 18;
+    ctx.shadowColor = 'rgba(249,168,212,0.55)';
+
+    const w = 60 * p, h = 20 * p;
+
+    // left loop
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(-w*.45, -h*1.35, -w, -h*.7, -w*.85, h*.15);
+    ctx.bezierCurveTo(-w*.65, h*.9, -w*.15, h*.4, 0, 0);
+    ctx.fillStyle   = 'rgba(253,164,175,0.6)';
+    ctx.fill();
+    ctx.strokeStyle = '#fda4af';
+    ctx.lineWidth   = 0.9;
+    ctx.stroke();
+
+    // right loop
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(w*.45, -h*1.35, w, -h*.7, w*.85, h*.15);
+    ctx.bezierCurveTo(w*.65, h*.9, w*.15, h*.4, 0, 0);
+    ctx.fillStyle   = 'rgba(253,164,175,0.55)';
+    ctx.fill();
+    ctx.stroke();
+
+    // knot
+    ctx.beginPath();
+    ctx.arc(0, 0, 4.5*p, 0, Math.PI*2);
+    ctx.fillStyle = '#fda4af';
+    ctx.fill();
+
+    // tails
+    const tailStyle = () => {
+      ctx.strokeStyle = 'rgba(249,168,212,0.75)';
+      ctx.lineWidth   = 1.2;
+    };
+    ctx.beginPath();
+    ctx.moveTo(-3*p, 3*p);
+    ctx.quadraticCurveTo(-18*p, 30*p, -10*p, 42*p);
+    tailStyle(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(3*p, 3*p);
+    ctx.quadraticCurveTo(18*p, 30*p, 10*p, 42*p);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // ── FLOWER (tulip style) ──
+  function drawFlower(i, prog) {
+    if (prog <= 0) return;
+    const p   = easeOut5(prog);
+    const tp  = tip(i);
+    const col = PETAL_COLORS[i];
+    const n   = 5;
+    const pl  = 15 * p;
+    const pw  = 7.5 * p;
+
+    ctx.save();
+    ctx.translate(tp.x, tp.y);
+    ctx.shadowBlur  = 22;
+    ctx.shadowColor = col + 'aa';
+
+    for (let k = 0; k < n; k++) {
+      const angle = (k / n) * Math.PI * 2 - Math.PI * 0.5;
+      ctx.save();
+      ctx.rotate(angle);
+      ctx.beginPath();
+      ctx.ellipse(0, -pl * 0.65, pw * 0.5, pl * 0.7, 0, 0, Math.PI * 2);
+      ctx.fillStyle   = col + 'cc';
+      ctx.fill();
+      ctx.strokeStyle = col;
+      ctx.lineWidth   = 0.6;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // stamen center
+    ctx.beginPath();
+    ctx.arc(0, 0, 4 * p, 0, Math.PI * 2);
+    const gr = ctx.createRadialGradient(0,0,0, 0,0,4*p);
+    gr.addColorStop(0, '#fff9c4');
+    gr.addColorStop(1, '#fde68a');
+    ctx.fillStyle = gr;
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // ── PARTICLES ──
+  function spawnParticles() {
+    for (let n = 0; n < 45; n++) {
+      const si = Math.floor(Math.random() * stems.length);
+      const tp = tip(si);
+      particles.push({
+        x: tp.x + (Math.random()-.5)*100,
+        y: tp.y + (Math.random()-.5)*130,
+        r: Math.random()*2+0.5,
+        col: PETAL_COLORS[Math.floor(Math.random()*PETAL_COLORS.length)],
+        vx: (Math.random()-.5)*0.22,
+        vy: -(Math.random()*0.3+0.05),
+        life: 0,
+        max: Math.random()*200+100,
+        delay: Math.random()*60,
+      });
+    }
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      if (p.delay-- > 0) continue;
+      p.life++;
+      p.x += p.vx + Math.sin(p.life*0.04)*0.12;
+      p.y += p.vy;
+      const lr = p.life / p.max;
+      const a  = lr < .2 ? lr/.2 : lr > .75 ? 1-(lr-.75)/.25 : 1;
+      const pulse = 0.55 + 0.45*Math.sin(p.life*0.12);
+
+      ctx.save();
+      ctx.shadowBlur  = 12;
+      ctx.shadowColor = p.col;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r*pulse, 0, Math.PI*2);
+      ctx.fillStyle = p.col + Math.floor(a*220).toString(16).padStart(2,'0');
+      ctx.fill();
+      ctx.restore();
+
+      if (p.life >= p.max) {
+        const si = Math.floor(Math.random()*stems.length);
+        const tp = tip(si);
+        Object.assign(p, {
+          x: tp.x+(Math.random()-.5)*100, y: tp.y+(Math.random()-.5)*130,
+          vx:(Math.random()-.5)*0.22, vy:-(Math.random()*0.3+0.05),
+          life:0, max:Math.random()*200+100, delay:Math.random()*30,
+        });
+      }
+    }
+  }
+
+  // ── BG GRADIENT ──
+  function drawBg() {
+    const bg = ctx.createRadialGradient(W*.5, H*.65, 20, W*.5, H*.65, H*.75);
+    bg.addColorStop(0, '#0f172a');
+    bg.addColorStop(0.55, '#080c14');
+    bg.addColorStop(1, '#040509');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // subtle warm glow behind bouquet
+    const glow = ctx.createRadialGradient(BX, BY-80, 5, BX, BY-80, 200);
+    glow.addColorStop(0, 'rgba(196,165,253,0.07)');
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // ── LOOP ──
+  function loop(ts) {
+    if (!t0) t0 = ts;
+    const e = ts - t0;
+
+    ctx.clearRect(0, 0, W, H);
+    drawBg();
+
+    // stems
+    for (let i = 0; i < stems.length; i++) {
+      const prog = clamp01((e - (S_START + i*S_LAG)) / S_DUR);
+      drawStem(i, prog);
+    }
+
+    // leaves
+    for (let i = 0; i < stems.length; i++) {
+      const prog = clamp01((e - (L_START + i*L_LAG)) / L_DUR);
+      drawLeaf(i, prog);
+    }
+
+    // ribbon
+    drawRibbon(clamp01((e - R_START) / R_DUR));
+
+    // flowers
+    for (let i = 0; i < stems.length; i++) {
+      const prog = clamp01((e - (F_START + i*F_LAG)) / F_DUR);
+      drawFlower(i, prog);
+    }
+
+    // particles
+    // play music the moment the first flower starts blooming
+    if (!musicPlayed && e >= F_START) {
+      musicPlayed = true;
+      bgm.currentTime = 0;
+      bgm.volume = 0;
+      bgm.play().catch(() => {});
+      // fade in volume smoothly over 1.5s
+      let vol = 0;
+      const fadeIn = setInterval(() => {
+        vol = Math.min(1, vol + 0.02);
+        bgm.volume = vol;
+        if (vol >= 1) clearInterval(fadeIn);
+      }, 30);
+    }
+
+    if (e > P_START && !pSpawned) { spawnParticles(); pSpawned = true; }
+    if (pSpawned) drawParticles();
+
+    requestAnimationFrame(loop);
+  }
+
+  requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
